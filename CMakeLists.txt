@@ -41,6 +41,8 @@ MESSAGE(${OpenCV_VERSION})
 find_package(Eigen3 3.1.0 REQUIRED)
 find_package(Pangolin REQUIRED)
 find_package(realsense2)
+find_package(Boost REQUIRED)
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 
 include_directories(
 ${PROJECT_SOURCE_DIR}
@@ -119,10 +121,10 @@ target_link_libraries(${PROJECT_NAME}
 ${OpenCV_LIBS}
 ${EIGEN3_LIBS}
 ${Pangolin_LIBRARIES}
-${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
-${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
--lboost_serialization
--lcrypto
+${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.dylib
+${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.dylib
+/opt/homebrew/Cellar/boost/1.84.0/lib/libboost_serialization.dylib
+${OPENSSL_CRYPTO_LIBRARIES}
 )
 
 # If RealSense SDK is found the library is added and its examples compiled
