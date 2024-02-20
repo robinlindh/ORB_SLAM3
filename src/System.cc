@@ -33,6 +33,11 @@
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
 
+bool has_suffix(const std::string &str, const std::string &suffix) {
+    std::size_t index = str.find(suffix, str.size() - suffix.size());
+    return (index != std::string::npos);
+}
+
 namespace ORB_SLAM3
 {
 
@@ -114,15 +119,27 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         //Load ORB Vocabulary
         cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
 
+        clock_t tStart = clock();
         mpVocabulary = new ORBVocabulary();
-        bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+        //bool bVocLoad = mpVocabulary->loadFromTextFile2(strVocFile);
+        bool bVocLoad = false; // chose loading method based on file extension
+        if (has_suffix(strVocFile, ".txt"))
+        {
+            cout << "Loading vocabulary from text file" << endl;
+            bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+        }
+        else
+        {
+            cout << "Loading vocabulary from binary file" << endl;
+            bVocLoad = mpVocabulary->loadFromBinaryFile(strVocFile);
+        }
         if(!bVocLoad)
         {
             cerr << "Wrong path to vocabulary. " << endl;
-            cerr << "Falied to open at: " << strVocFile << endl;
+            cerr << "Failed to open at: " << strVocFile << endl;
             exit(-1);
         }
-        cout << "Vocabulary loaded!" << endl << endl;
+        printf("Vocabulary loaded in %.2fs\n", (double)(clock() - tStart)/CLOCKS_PER_SEC);
 
         //Create KeyFrame Database
         mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
@@ -137,7 +154,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
 
         mpVocabulary = new ORBVocabulary();
-        bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+        bool bVocLoad = mpVocabulary->loadFromTextFile2(strVocFile);
         if(!bVocLoad)
         {
             cerr << "Wrong path to vocabulary. " << endl;
@@ -226,8 +243,8 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     //usleep(10*1000*1000);
 
     //Initialize the Viewer thread and launch
-    if(bUseViewer)
-    //if(false) // TODO
+    //if(bUseViewer)
+    if(false) // TODO
     {
         mpViewer = new Viewer(this, mpFrameDrawer,mpMapDrawer,mpTracker,strSettingsFile,settings_);
         mptViewer = new thread(&Viewer::Run, mpViewer);

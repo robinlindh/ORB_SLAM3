@@ -7,6 +7,7 @@
 # Unignore all dirs
 !*/
 
+/EuRoC/
 CMakeLists.txt.user
 CMakeLists_modified.txt
 

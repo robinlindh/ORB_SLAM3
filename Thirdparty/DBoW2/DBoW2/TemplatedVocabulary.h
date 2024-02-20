@@ -239,6 +239,7 @@ public:
    * @param filename
    */
   bool loadFromTextFile(const std::string &filename);
+  bool loadFromTextFile2(const std::string &filename); //CUSTOM (https://github.com/Beewe/ORB_SLAM2_Windows/commit/bcd957c48c9ebc3bd4839bb5e9e036783faabd4f)
 
   /**
    * Saves the vocabulary into a text file
@@ -246,6 +247,18 @@ public:
    */
   void saveToTextFile(const std::string &filename) const;  
 
+  /**
+   * Loads the vocabulary from a binary file
+   * @param filename
+   */
+  bool loadFromBinaryFile(const std::string &filename);
+
+  /**
+   * Saves the vocabulary into a binary file
+   * @param filename
+   */
+  void saveToBinaryFile(const std::string &filename) const;
+    
   /**
    * Saves the vocabulary into a file
    * @param filename
@@ -1375,6 +1388,7 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
 
     m_nodes.resize(1);
     m_nodes[0].id = 0;
+    int proc = 0;
     while(!f.eof())
     {
         string snode;
@@ -1400,7 +1414,7 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
             string sElement;
             ssnode >> sElement;
             ssd << sElement << " ";
-	}
+        }
         F::fromString(m_nodes[nid].descriptor, ssd.str());
 
         ssnode >> m_nodes[nid].weight;
@@ -1417,10 +1431,211 @@ bool TemplatedVocabulary<TDescriptor,F>::loadFromTextFile(const std::string &fil
         {
             m_nodes[nid].children.reserve(m_k);
         }
+        
+        proc++;
+        if (proc % (int)(expected_nodes / 100) == 0)
+            std::cout << (int)(proc / (expected_nodes / 100)) << "%.. " << std::endl;
     }
 
     return true;
 
+}
+
+template<class TDescriptor, class F>
+bool TemplatedVocabulary<TDescriptor, F>::loadFromTextFile2(const std::string &filename) {
+    const char * c = filename.c_str();
+
+    std::FILE *fp = std::fopen(c, "rb");
+    if (!fp) {
+        return false;
+    }
+
+    std::string content;
+    std::fseek(fp, 0, SEEK_END);
+    content.resize(std::ftell(fp));
+    std::rewind(fp);
+    std::fread(&content[0], 1, content.size(), fp);
+    std::fclose(fp);
+
+    char *string = strdup(content.c_str());
+    char *end_str;
+    char *token = strtok_r(string, "\n", &end_str);
+    int n1, n2;
+
+    std::vector<int> bagInfo;
+    bagInfo.reserve(4);
+    if (token != NULL) {
+        char *end_token;
+        char *token2 = strtok_r(token, " ", &end_token);
+        while (token2 != NULL) {
+            bagInfo.push_back(atoi(token2));
+            token2 = strtok_r(NULL, " ", &end_token);
+        }
+        token = strtok_r(NULL, "\n", &end_str);
+    }
+    m_k = bagInfo[0];
+    m_L = bagInfo[1];
+    n1 = bagInfo[2];
+    n2 = bagInfo[3];
+
+    // Check bow tree values
+    if (m_k<0 || m_k>20 || m_L<1 || m_L>10 || n1<0 || n1>5 || n2<0 || n2>3) {
+        std::cerr << "Vocabulary loading failure: This is not a correct text file!" << endl;
+        return false;
+    }
+
+    // Create scoring object
+    m_scoring = (ScoringType)n1;
+    m_weighting = (WeightingType)n2;
+    createScoringObject();
+
+    // Expected nodes
+    int expected_nodes = (int)((pow((double)m_k, (double)m_L + 1) - 1) / (m_k - 1));
+    std::cout << "Expected nodes: " << expected_nodes << std::endl;
+    
+    // Create tree structure, allocate space
+    m_nodes.reserve(expected_nodes);
+    m_words.reserve(pow((double)m_k, (double)m_L + 1));
+    m_nodes.resize(1);
+    m_nodes[0].id = 0;
+
+
+    int lineIndex = 0;
+    int proc = 0;
+
+    while (token != NULL) {
+        lineIndex = 0;
+        char *end_token;
+
+        // Create needed variables
+        int pid = 0;
+        int nIsLeaf = 0;
+        double weight = 0;
+        int nid = m_nodes.size();
+
+        // Update tree structure
+        m_nodes.resize(m_nodes.size() + 1);
+        m_nodes[nid].id = nid;
+
+        // Create descriptor
+        m_nodes[nid].descriptor.create(1, 32, CV_8U);
+        unsigned char *p = m_nodes[nid].descriptor.template ptr<unsigned char>();
+
+        // Iterate over tokens in one line
+        char *token2 = strtok_r(token, " ", &end_token);
+        while (token2 != NULL) {
+            if (lineIndex == 0) {
+                pid = atoi(token2);
+            } else if (lineIndex == 1) {
+                nIsLeaf = atoi(token2);
+            } else if (lineIndex > 1 && lineIndex < 34) {
+                *p = (unsigned char)(atoi(token2));
+                p++;
+            } else if (lineIndex == 34) {
+                weight = atof(token2);
+            }
+
+            // Do not edit below
+            token2 = strtok_r(NULL, " ", &end_token);
+            lineIndex++;
+        }
+
+        m_nodes[nid].weight = weight;
+        m_nodes[nid].parent = pid;
+        m_nodes[pid].children.push_back(nid);
+
+        if (nIsLeaf>0) {
+            int wid = m_words.size();
+            m_words.resize(wid + 1);
+
+            m_nodes[nid].word_id = wid;
+            m_words[wid] = &m_nodes[nid];
+        } else {
+            m_nodes[nid].children.reserve(m_k);
+        }
+
+
+        // Do not edit below
+        token = strtok_r(NULL, "\n", &end_str);
+
+        proc++;
+        if (proc % (int)(expected_nodes / 100) == 0)
+            std::cout << (int)(proc / (expected_nodes / 100)) << "%.. " << std::endl;
+    }
+    std::cout << "100%!" << std::endl;
+    return true;
+}
+
+
+// --------------------------------------------------------------------------
+template<class TDescriptor, class F>
+bool TemplatedVocabulary<TDescriptor,F>::loadFromBinaryFile(const std::string &filename) {
+  fstream f;
+  f.open(filename.c_str(), ios_base::in|ios::binary);
+  unsigned int nb_nodes, size_node;
+  f.read((char*)&nb_nodes, sizeof(nb_nodes));
+  f.read((char*)&size_node, sizeof(size_node));
+  f.read((char*)&m_k, sizeof(m_k));
+  f.read((char*)&m_L, sizeof(m_L));
+  f.read((char*)&m_scoring, sizeof(m_scoring));
+  f.read((char*)&m_weighting, sizeof(m_weighting));
+  createScoringObject();
+
+  m_words.clear();
+  m_words.reserve(pow((double)m_k, (double)m_L + 1));
+  m_nodes.clear();
+  m_nodes.resize(nb_nodes+1);
+  m_nodes[0].id = 0;
+  char buf[size_node]; int nid = 1;
+  while (!f.eof()) {
+    f.read(buf, size_node);
+    m_nodes[nid].id = nid;
+    // FIXME
+    const int* ptr=(int*)buf;
+    m_nodes[nid].parent = *ptr;
+    //m_nodes[nid].parent = *(const int*)buf;
+    m_nodes[m_nodes[nid].parent].children.push_back(nid);
+    m_nodes[nid].descriptor = cv::Mat(1, F::L, CV_8U);
+    memcpy(m_nodes[nid].descriptor.data, buf+4, F::L);
+    m_nodes[nid].weight = *(float*)(buf+4+F::L);
+    if (buf[8+F::L]) { // is leaf
+      int wid = m_words.size();
+      m_words.resize(wid+1);
+      m_nodes[nid].word_id = wid;
+      m_words[wid] = &m_nodes[nid];
+    }
+    else
+      m_nodes[nid].children.reserve(m_k);
+    nid+=1;
+  }
+  f.close();
+  return true;
+}
+
+
+// --------------------------------------------------------------------------
+
+template<class TDescriptor, class F>
+void TemplatedVocabulary<TDescriptor,F>::saveToBinaryFile(const std::string &filename) const {
+  fstream f;
+  f.open(filename.c_str(), ios_base::out|ios::binary);
+  unsigned int nb_nodes = m_nodes.size();
+  float _weight;
+  unsigned int size_node = sizeof(m_nodes[0].parent) + F::L*sizeof(char) + sizeof(_weight) + sizeof(bool);
+  f.write((char*)&nb_nodes, sizeof(nb_nodes));
+  f.write((char*)&size_node, sizeof(size_node));
+  f.write((char*)&m_k, sizeof(m_k));
+  f.write((char*)&m_L, sizeof(m_L));
+  f.write((char*)&m_scoring, sizeof(m_scoring));
+  f.write((char*)&m_weighting, sizeof(m_weighting));
+  for(size_t i=1; i<nb_nodes;i++) {
+    const Node& node = m_nodes[i];
+    f.write((char*)&node.parent, sizeof(node.parent));
+    f.write((char*)node.descriptor.data, F::L);
+    _weight = node.weight; f.write((char*)&_weight, sizeof(_weight));
+    bool is_leaf = node.isLeaf(); f.write((char*)&is_leaf, sizeof(is_leaf)); // i put this one at the end for alignement....
+  }
+  f.close();
 }
 
 // --------------------------------------------------------------------------

@@ -117,25 +117,33 @@ int main(int argc, char *argv[])
     cout.precision(17);
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
+    cout << "CREATE SLAM" << endl;
     ORB_SLAM3::System SLAM(argv[1],argv[2],ORB_SLAM3::System::IMU_MONOCULAR, true);
+    cout << "DONE CREATE SLAM" << endl;
     float imageScale = SLAM.GetImageScale();
-
+    cout << "GOT IMAGE SCALE" << imageScale << endl;
+    
     double t_resize = 0.f;
     double t_track = 0.f;
 
     int proccIm=0;
     for (seq = 0; seq<num_seq; seq++)
     {
-
+        cout << "seq = " << seq << endl;
+        
         // Main loop
         cv::Mat im;
         vector<ORB_SLAM3::IMU::Point> vImuMeas;
         proccIm = 0;
         for(int ni=0; ni<nImages[seq]; ni++, proccIm++)
         {
+            cout << "image index " << ni << endl;
+            
             // Read image from file
             im = cv::imread(vstrImageFilenames[seq][ni],cv::IMREAD_UNCHANGED); //CV_LOAD_IMAGE_UNCHANGED);
 
+            cout << "Got image imread" << endl;
+            
             double tframe = vTimestampsCam[seq][ni];
 
             if(im.empty())
@@ -147,6 +155,7 @@ int main(int argc, char *argv[])
 
             if(imageScale != 1.f)
             {
+                cout << "image scale not 1.f" << endl;
 #ifdef REGISTER_TIMES
     #ifdef COMPILEDWITHC11
                 std::chrono::steady_clock::time_point t_Start_Resize = std::chrono::steady_clock::now();
@@ -156,19 +165,24 @@ int main(int argc, char *argv[])
 #endif
                 int width = im.cols * imageScale;
                 int height = im.rows * imageScale;
+                cout << "resize image to " << width << "x" << height << endl;
+                
                 cv::resize(im, im, cv::Size(width, height));
+                cout << "resized" << endl;
 #ifdef REGISTER_TIMES
     #ifdef COMPILEDWITHC11
                 std::chrono::steady_clock::time_point t_End_Resize = std::chrono::steady_clock::now();
     #else
                 std::chrono::monotonic_clock::time_point t_End_Resize = std::chrono::monotonic_clock::now();
     #endif
+                cout << "inserting resize time" << endl;
                 t_resize = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(t_End_Resize - t_Start_Resize).count();
                 SLAM.InsertResizeTime(t_resize);
 #endif
             }
 
             // Load imu measurements from previous frame
+            cout << "start loading imu" << endl;
             vImuMeas.clear();
 
             if(ni>0)
@@ -183,6 +197,7 @@ int main(int argc, char *argv[])
                     first_imu[seq]++;
                 }
             }
+            cout << "loaded imus" << endl;
 
     #ifdef COMPILEDWITHC11
             std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
@@ -192,8 +207,9 @@ int main(int argc, char *argv[])
 
             // Pass the image to the SLAM system
             // cout << "tframe = " << tframe << endl;
+            cout << "track monocular" << endl;
             SLAM.TrackMonocular(im,tframe,vImuMeas); // TODO change to monocular_inertial
-
+            cout << "done track monocular" << endl;
     #ifdef COMPILEDWITHC11
             std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
     #else
@@ -212,14 +228,17 @@ int main(int argc, char *argv[])
             vTimesTrack[ni]=ttrack;
 
             // Wait to load the next frame
+            cout << "wait to load next frame" << endl;
             double T=0;
             if(ni<nImages[seq]-1)
                 T = vTimestampsCam[seq][ni+1]-tframe;
             else if(ni>0)
                 T = tframe-vTimestampsCam[seq][ni-1];
 
-            if(ttrack<T)
-                usleep((T-ttrack)*1e6); // 1e6
+            if(ttrack<T) {
+                //cout << "usleep " << ((T-ttrack)*1e6) << endl;
+                //usleep((T-ttrack)*1e6); // 1e6
+            }
         }
         if(seq < num_seq - 1)
         {
